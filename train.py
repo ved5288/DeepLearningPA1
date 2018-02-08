@@ -1,5 +1,6 @@
 import argparse
 import numpy as np
+import csv
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -38,7 +39,7 @@ args = parser.parse_args()
 lr = args.lr
 momentum = args.momentum
 num_hidden = args.num_hidden
-sizes  = args.sizes.split(',')
+sizes  = map(int,args.sizes.split(','))
 activation = args.activation
 loss = args.loss
 anneal = args.anneal
@@ -98,78 +99,101 @@ def trueClassVector(y,n):
 	vector = np.zeros((n,1))
 	vector[y] = 1
 
+
 	return vector
 
-
-def forwardPropogation(W,B,H,A,A_last,B_last,W_last):
+def forwardPropogation(W,B,H,A,dataPointIndex):
 	for k in range(0,num_hidden-1):
-		A[k] = np.add(B[k],np.matmul(W[k],H[k]))		#careful with the indexing at H
-		
+		if(k!=0):
+			A[k] = np.add(B[k],np.matmul(W[k],H[k]))
+		else:
+			m = H[k][dataPointIndex].reshape((len(H[k][dataPointIndex]),1))
+			A[k] = np.add(B[k],np.matmul(W[k],m))
+
 		if(activation=="sigmoid"):
 			H[k+1] = sigmoidFunctionToVector(A[k])
 
 		else:
 			H[k+1] = tanhFunctionToVector(A[k])
 
-	A_last = np.add(B_last,np.matmul(W_last,H[num_hidden-1]))
+	A[-1] = np.add(B[-1],np.matmul(W[-1],H[num_hidden-1]))
+	y_hat = softmax(A[-1])
+	return A,H,y_hat
 
-	y_hat = softmax(A_last)
-
-	return A,A_last,H,y_hat
-
-		# A[k] should be a nx1 matrix
-		# B[k] should be a nx1 matrix
-		# W[k] should be a nxn matrix
-		# H[k] should be nx1 matrix
-
-
-def backPropogation(W,B,H,A,A_last,B_last,W_last,y_hat,y):
+def backPropogation(W,B,H,A,y_hat,dataPointIndex):
 	
-	grad_ak_Loss = -(trueClassVector(y,len(A_last))-y_hat)
+	grad_aL_Loss = -(trueClassVector(Y[dataPointIndex],numClasses)-y_hat)
 
-	grad_W_Loss = np.zeros((num_hidden-1,n,n))
-	grad_B_Loss = np.zeros((num_hidden-1,n,1))
+	grad_W_Loss = []
+	grad_B_Loss = []
 
-	grad_WL_Loss = np.matmul(grad_ak_Loss,np.transpose(H[num_hidden-1]))
-	grad_bL_Loss = grad_ak_Loss
-
-	if(activation=="sigmoid"):
-		grad_ak_Loss = (np.matmul(np.transpose(W_last),grad_ak_Loss))*sigmoidDerivativeFunctionToVector(A[-1])
-	else:
-		grad_ak_Loss = (np.matmul(np.transpose(W_last),grad_ak_Loss))*tanhDerivativeFunctionToVector(A[-1])
-
-	for k in range(num_hidden-2,-1,-1):
-		grad_W_Loss[k] = np.matmul(grad_ak_Loss,np.transpose(H[k]))
-		grad_B_Loss[k] = grad_ak_Loss
-		if(activation=="sigmoid"):
-			grad_ak_Loss = (np.matmul(np.transpose(W[k]),grad_ak_Loss))*sigmoidDerivativeFunctionToVector(A[k-1])
+	for k in range(num_hidden,-1,-1):
+		if k == 0:
+			m = H[k][dataPointIndex].reshape((len(H[k][dataPointIndex]),1))
+			tempGrad_W_Loss = np.matmul(grad_aL_Loss,np.transpose(m))
 		else:
-			grad_ak_Loss = (np.matmul(np.transpose(W[k]),grad_ak_Loss))*tanhDerivativeFunctionToVector(A[k-1])
+			tempGrad_W_Loss = np.matmul(grad_aL_Loss,np.transpose(H[k]))
+		tempGrad_B_Loss = grad_aL_Loss
 
-	print grad_W_Loss.shape
+		grad_W_Loss.insert(0,tempGrad_W_Loss)
+		grad_B_Loss.insert(0,tempGrad_B_Loss)
 
+		if(k>0):
+			if(activation=="sigmoid"):
+				grad_aL_Loss = (np.matmul(np.transpose(W[k]),grad_aL_Loss))*sigmoidDerivativeFunctionToVector(A[k-1])
+			else:
+				grad_aL_Loss = (np.matmul(np.transpose(W[k]),grad_aL_Loss))*tanhDerivativeFunctionToVector(A[k-1])
 
+	return grad_W_Loss,grad_B_Loss
 
+numClasses = 10
 
+A = []
+B = []
+H = []
+W = []
 
-n = 3
-k = n-1
+X = []
+Y = []
+with open(train,"rb") as file_obj:
+	reader = csv.reader(file_obj)
+	for row in reader:
+		if(row[0]!="id"):
+			X.append(map(float,row[1:-1]))
+			Y.append(int(row[-1]))
 
-X = np.zeros((n,1))
-# print X
+numFeatures = len(X[0])
 
-H = np.zeros((num_hidden,n,1))
-H[0] = X
-# print H
+X = np.array(X)
 
-B = np.zeros((num_hidden-1,n,1))
-W = np.zeros((num_hidden-1,n,n))
-W_last = np.zeros((k,n))
-B_last = np.zeros((k,1))
+H.append(X) 
+W.append(np.zeros((sizes[0],numFeatures)))
 
+if(num_hidden!=len(sizes)):
+	raise "Inconsistent Input: sizes of hidden layer do not match the no of layers"
 
-A = np.zeros((num_hidden-1,n,1))
-A_last = np.zeros((k,1))
+for i in range(num_hidden):
+	tempA = np.zeros((sizes[i],1))
+	tempB = np.zeros((sizes[i],1))
+	tempH = np.zeros((sizes[i],1))
+	if(i!=num_hidden-1):
+		tempW = np.zeros((sizes[i+1],sizes[i]))
+		W.append(tempW)
 
-A,A_last,H,y_hat = forwardPropogation(W,B,H,A,A_last,B_last,W_last)
-backPropogation(W,B,H,A,A_last,B_last,W_last,y_hat,1)
+	A.append(tempA)
+	B.append(tempB)
+	H.append(tempH)
+
+W.append(np.zeros((numClasses,sizes[-1])))
+B.append(np.zeros((numClasses,1)))
+A.append(np.zeros((numClasses,1)))
+
+for i in range(len(X)):
+	A,H,y_hat = forwardPropogation(W,B,H,A,i)
+	gradWLoss,gradBLoss = backPropogation(W,B,H,A,y_hat,i)
+
+	for k in range(len(W)):
+		W[k] = W[k] - lr*gradWLoss[k]
+
+	for k in range(len(B)):
+		B[k] = B[k] - lr*gradBLoss[k]
