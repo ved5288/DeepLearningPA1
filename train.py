@@ -1,6 +1,7 @@
 import argparse
 import numpy as np
 import csv
+from sklearn import preprocessing as prep
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -103,6 +104,7 @@ def trueClassVector(y,n):
 	return vector
 
 def forwardPropogation(W,B,H,A,dataPointIndex):
+
 	for k in range(0,num_hidden-1):
 		if(k!=0):
 			A[k] = np.add(B[k],np.matmul(W[k],H[k]))
@@ -110,13 +112,19 @@ def forwardPropogation(W,B,H,A,dataPointIndex):
 			m = H[k][dataPointIndex].reshape((len(H[k][dataPointIndex]),1))
 			A[k] = np.add(B[k],np.matmul(W[k],m))
 
+			# print W[k]
+
 		if(activation=="sigmoid"):
 			H[k+1] = sigmoidFunctionToVector(A[k])
 
 		else:
 			H[k+1] = tanhFunctionToVector(A[k])
 
+		# print "A[",k,"] = ",A[k]
+
 	A[-1] = np.add(B[-1],np.matmul(W[-1],H[num_hidden-1]))
+	
+	# print A
 	y_hat = softmax(A[-1])
 	return A,H,y_hat
 
@@ -144,6 +152,9 @@ def backPropogation(W,B,H,A,y_hat,dataPointIndex):
 			else:
 				grad_aL_Loss = (np.matmul(np.transpose(W[k]),grad_aL_Loss))*tanhDerivativeFunctionToVector(A[k-1])
 
+		# print k
+		# print A[k-1]
+
 	return grad_W_Loss,grad_B_Loss
 
 numClasses = 10
@@ -165,28 +176,30 @@ with open(train,"rb") as file_obj:
 numFeatures = len(X[0])
 
 X = np.array(X)
+X = prep.normalize(X,norm='l1',axis=0)
 
 H.append(X) 
-W.append(np.zeros((sizes[0],numFeatures)))
+W.append(np.random.uniform(low=0,high=1,size=(sizes[0],numFeatures)))
 
 if(num_hidden!=len(sizes)):
 	raise "Inconsistent Input: sizes of hidden layer do not match the no of layers"
 
 for i in range(num_hidden):
-	tempA = np.zeros((sizes[i],1))
-	tempB = np.zeros((sizes[i],1))
-	tempH = np.zeros((sizes[i],1))
+	tempA = np.random.uniform(low=0,high=1,size=(sizes[i],1))
+	tempB = np.random.uniform(low=0,high=1,size=(sizes[i],1))
+	tempH = np.random.uniform(low=0,high=1,size=(sizes[i],1))
 	if(i!=num_hidden-1):
-		tempW = np.zeros((sizes[i+1],sizes[i]))
+		tempW = np.random.uniform(low=0,high=1,size=(sizes[i+1],sizes[i]))
 		W.append(tempW)
 
 	A.append(tempA)
 	B.append(tempB)
 	H.append(tempH)
 
-W.append(np.zeros((numClasses,sizes[-1])))
-B.append(np.zeros((numClasses,1)))
-A.append(np.zeros((numClasses,1)))
+W.append(np.random.uniform(low=0,high=1,size=(numClasses,sizes[-1])))
+B.append(np.random.uniform(low=0,high=1,size=(numClasses,1)))
+A.append(np.random.uniform(low=0,high=1,size=(numClasses,1)))
+
 
 for i in range(len(X)):
 	A,H,y_hat = forwardPropogation(W,B,H,A,i)
@@ -197,3 +210,6 @@ for i in range(len(X)):
 
 	for k in range(len(B)):
 		B[k] = B[k] - lr*gradBLoss[k]
+
+
+	print B
