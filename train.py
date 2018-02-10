@@ -1,7 +1,9 @@
 import argparse
 import numpy as np
 import csv
+import math
 from sklearn import preprocessing as prep
+from sklearn import metrics as mt 
 
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -33,7 +35,8 @@ parser.add_argument('--batch_size',type=acceptedBatchSize)
 parser.add_argument('--save_dir',type=str) 							
 parser.add_argument('--expt_dir',type=str) 							
 parser.add_argument('--train',type=str) 							
-parser.add_argument('--test',type=str) 								
+parser.add_argument('--test',type=str) 
+parser.add_argument('--val',type=str)								
 
 args = parser.parse_args()
 
@@ -50,6 +53,8 @@ save_dir = args.save_dir
 expt_dir = args.expt_dir
 train = args.train
 test = args.test
+val = args.val
+maxIterations = 20
 
 ###########################################################################################
 
@@ -60,7 +65,7 @@ def sigmoidDerivate(z):
 	return sigmoid(z)*(1-sigmoid(z))
 
 def tanh(z):
-	return (np.exp(z) - np.exp(-z))/(np.exp(z) + np.exp(-z))
+	return (np.exp(2*z) - 1)/(np.exp(2*z) + 1)
 
 def tanhDerivative(z):
 	a = tanh(z)
@@ -78,12 +83,22 @@ sigmoidFunctionToVector = np.vectorize(sigmoidFunction)
 sigmoidDerivateFunction = lambda z: sigmoidDerivate(z)
 sigmoidDerivativeFunctionToVector = np.vectorize(sigmoidDerivateFunction)
 
+sqrtAndInvFunction = lambda z: 1.0/np.sqrt(z)
+sqrtAndInvFunctionToVector = np.vectorize(sqrtAndInvFunction)
+
 def softmax(v):
 	# TESTED
 	convertToExponent = lambda z: np.exp(z)
 	convertToExponenToVector = np.vectorize(convertToExponent)
 
-	new_v = convertToExponenToVector(v)
+	maxValue = np.amax(v)
+
+	subtractByMax = lambda z: z-maxValue
+	subtractByMaxToVector = np.vectorize(subtractByMax)
+
+	new_v = subtractByMaxToVector(v)
+
+	new_v = convertToExponenToVector(new_v)
 	sum_new_v = np.sum(new_v)
 
 	linearNormalize = lambda z: z/sum_new_v
@@ -115,10 +130,14 @@ def forwardPropogation(W,B,H,A,dataPointIndex):
 			# print W[k]
 
 		if(activation=="sigmoid"):
-			H[k+1] = sigmoidFunctionToVector(A[k])
+			minValueOfA = np.amin(A[k])
+			tempA = np.add(A[k],minValueOfA)
+			H[k+1] = sigmoidFunctionToVector(tempA)
 
 		else:
-			H[k+1] = tanhFunctionToVector(A[k])
+			maxValueOfA = np.amax(A[k])
+			tempA = np.subtract(A[k],maxValueOfA)
+			H[k+1] = tanhFunctionToVector(tempA)
 
 		# print "A[",k,"] = ",A[k]
 
@@ -148,9 +167,13 @@ def backPropogation(W,B,H,A,y_hat,dataPointIndex):
 
 		if(k>0):
 			if(activation=="sigmoid"):
-				grad_aL_Loss = (np.matmul(np.transpose(W[k]),grad_aL_Loss))*sigmoidDerivativeFunctionToVector(A[k-1])
+				minValueOfA = np.amin(A[k-1])
+				tempA = np.add(A[k-1],minValueOfA)
+				grad_aL_Loss = (np.matmul(np.transpose(W[k]),grad_aL_Loss))*sigmoidDerivativeFunctionToVector(tempA)
 			else:
-				grad_aL_Loss = (np.matmul(np.transpose(W[k]),grad_aL_Loss))*tanhDerivativeFunctionToVector(A[k-1])
+				maxValueOfA = np.amax(A[k-1])
+				tempA = np.subtract(A[k-1],maxValueOfA)
+				grad_aL_Loss = (np.matmul(np.transpose(W[k]),grad_aL_Loss))*tanhDerivativeFunctionToVector(tempA)
 
 		# print k
 		# print A[k-1]
@@ -166,6 +189,7 @@ W = []
 
 X = []
 Y = []
+
 with open(train,"rb") as file_obj:
 	reader = csv.reader(file_obj)
 	for row in reader:
@@ -176,7 +200,7 @@ with open(train,"rb") as file_obj:
 numFeatures = len(X[0])
 
 X = np.array(X)
-X = prep.normalize(X,norm='l1',axis=0)
+# X = prep.normalize(X,norm='l1',axis=0)
 
 H.append(X) 
 W.append(np.random.uniform(low=0,high=1,size=(sizes[0],numFeatures)))
@@ -201,15 +225,167 @@ B.append(np.random.uniform(low=0,high=1,size=(numClasses,1)))
 A.append(np.random.uniform(low=0,high=1,size=(numClasses,1)))
 
 
-for i in range(len(X)):
+prev_v_w = []
+prev_v_b = []
+
+for k in range(len(W)):
+	prev_v_w.append(np.zeros(W[k].shape))
+	prev_v_b.append(np.zeros(B[k].shape))
+
+
+for t in range(maxIterations):
+
+	print t
+
+	tempV_w = W
+	tempV_b = B
+
+	Wprime = W
+	Bprime = B
+
+	for j in range(len(X)/batch_size):
+
+		if(opt=="nag"):
+
+			for k in range(len(Wprime)):
+				tempV_w[k] = np.multiply(prev_v_w[k],momentum)
+				tempV_b[k] = np.multiply(prev_v_b[k],momentum)
+
+				Wprime[k] = np.subtract(W[k],tempV_w[k])
+				Bprime[k] = np.subtract(B[k],tempV_b[k])
+
+			A,H,y_hat = forwardPropogation(Wprime,Bprime,H,A,j*batch_size)
+			gradWLoss,gradBLoss = backPropogation(Wprime,Bprime,H,A,y_hat,j*batch_size)
+
+			for i in range(1,batch_size):
+
+				index = j*batch_size + i
+
+				A,H,y_hat = forwardPropogation(Wprime,Bprime,H,A,index)
+				tempGradWLoss,tempGradBLoss = backPropogation(Wprime,Bprime,H,A,y_hat,index)
+			
+				for k in range(len(gradWLoss)):
+					gradWLoss[k] = np.add(gradWLoss[k],tempGradWLoss[k])
+					gradBLoss[k] = np.add(gradBLoss[k],tempGradBLoss[k])
+
+			for k in range(len(gradWLoss)):
+				tempV_w[k] = np.add(np.multiply(prev_v_w[k],momentum),np.multiply(gradWLoss[k],lr))
+				tempV_b[k] = np.add(np.multiply(prev_v_b[k],momentum),np.multiply(gradBLoss[k],lr))
+
+				W[k] = np.subtract(W[k],tempV_w[k])
+				B[k] = np.subtract(B[k],tempV_b[k])
+
+				prev_v_w[k] = tempV_w[k]
+				prev_v_b[k] = tempV_b[k]
+
+		else:
+
+			A,H,y_hat = forwardPropogation(W,B,H,A,j*batch_size)
+			gradWLoss,gradBLoss = backPropogation(W,B,H,A,y_hat,j*batch_size)
+			
+			for i in range(1,batch_size):
+
+				index = j*batch_size + i
+
+				A,H,y_hat = forwardPropogation(W,B,H,A,index)
+				tempGradWLoss,tempGradBLoss = backPropogation(W,B,H,A,y_hat,index)
+			
+				for k in range(len(gradWLoss)):
+					gradWLoss[k] = np.add(gradWLoss[k],tempGradWLoss[k])
+					gradBLoss[k] = np.add(gradBLoss[k],tempGradBLoss[k])
+
+			for k in range(len(gradWLoss)):
+				gradWLoss[k] = np.divide(gradWLoss[k],batch_size)
+				gradBLoss[k] = np.divide(gradBLoss[k],batch_size)
+
+			# till here we compute the gradient for the batch, that is dw and db
+
+			if(opt=="adam"):
+				beta1 = 0.9
+				beta2 = 0.999
+				eps = 1e-8
+
+				m_w = []
+				m_b = []
+				v_w = []
+				v_b = []
+
+				for k in range(len(gradWLoss)):
+					m_w.append(np.zeros(gradWLoss[k].shape))
+					m_b.append(np.zeros(gradBLoss[k].shape))
+					v_w.append(np.zeros(gradWLoss[k].shape))
+					v_b.append(np.zeros(gradBLoss[k].shape))
+
+				for k in range(len(gradWLoss)):
+					m_w[k] = np.add(np.multiply(m_w[k],beta1),np.multiply(gradWLoss[k],(1-beta1)))
+					m_b[k] = np.add(np.multiply(m_b[k],beta1),np.multiply(gradBLoss[k],(1-beta1)))
+
+					v_w[k] = np.add(np.multiply(v_w[k],beta2),np.multiply(gradWLoss[k]*gradWLoss[k],(1-beta2)))
+					v_b[k] = np.add(np.multiply(v_b[k],beta2),np.multiply(gradBLoss[k]*gradBLoss[k],(1-beta2)))
+
+
+					m_w[k] = np.divide(m_w[k],(1-math.pow(beta1,t+1)))
+					m_b[k] = np.divide(m_b[k],(1-math.pow(beta1,t+1)))
+
+					v_w[k] = np.divide(v_w[k],(1-math.pow(beta2,t+1)))
+					v_b[k] = np.divide(v_b[k],(1-math.pow(beta2,t+1)))
+
+					v_wktemp = np.multiply(sqrtAndInvFunctionToVector(np.add(v_w[k],eps))*m_w[k],lr) 
+					W[k] = np.subtract(W[k],v_wktemp) 
+
+					v_bktemp = np.multiply(sqrtAndInvFunctionToVector(np.add(v_b[k],eps))*m_b[k],lr) 
+					B[k] = np.subtract(B[k],v_bktemp) 
+
+			elif(opt=="momentum"):
+				for k in range(len(gradWLoss)):
+
+					v_w = np.add(np.multiply(prev_v_w[k],momentum),np.multiply(gradWLoss[k],lr))
+					v_b = np.add(np.multiply(prev_v_b[k],momentum),np.multiply(gradBLoss[k],lr))
+
+					W[k] = np.subtract(W[k],v_w)
+					B[k] = np.subtract(B[k],v_b)
+
+					prev_v_w[k] = v_w
+					prev_v_b[k] = v_b
+
+
+			elif(opt=="gd"):
+
+				for k in range(len(W)):
+					W[k] = W[k] - lr*gradWLoss[k]
+					B[k] = B[k] - lr*gradBLoss[k]
+
+
+			else:
+				# Execution should never come here
+				raise "Erratic input of the optimization algorithm"
+
+X_val = []
+Y_val = []
+Yhat_val = []
+
+with open(val,"rb") as file_obj:
+	reader = csv.reader(file_obj)
+	for row in reader:
+		if(row[0]!="id"):
+			X_val.append(map(float,row[1:-1]))
+			Y_val.append(int(row[-1]))
+
+
+H[0] = np.array(X_val)
+
+for i in range(len(X_val)):
 	A,H,y_hat = forwardPropogation(W,B,H,A,i)
-	gradWLoss,gradBLoss = backPropogation(W,B,H,A,y_hat,i)
+	Yhat_val.append(np.argmax(y_hat))
 
-	for k in range(len(W)):
-		W[k] = W[k] - lr*gradWLoss[k]
+f1Score = mt.f1_score(Y_val,Yhat_val)
 
-	for k in range(len(B)):
-		B[k] = B[k] - lr*gradBLoss[k]
+correct = 0
+for i in range(len(Y_val)):
+	if(Y_val[i]==Yhat_val[i]):
+		correct = correct + 1
 
+print "Number of correct : ",correct
+print "Number incorrect: ", len(Y_val) - correct
 
-	print B
+print f1Score
