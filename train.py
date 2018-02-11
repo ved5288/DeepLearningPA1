@@ -54,18 +54,26 @@ expt_dir = args.expt_dir
 train = args.train
 test = args.test
 val = args.val
-maxIterations = 20
+maxIterations = 2
 
 ###########################################################################################
 
 def sigmoid(z):
-	return 1.0/(1.0+np.exp(-z))
+	if z >= 0:
+		return 1.0/(1.0+np.exp(-z))
+	else:
+		return np.exp(z)/(np.exp(z) + 1.0)
 
 def sigmoidDerivate(z):
 	return sigmoid(z)*(1-sigmoid(z))
 
 def tanh(z):
-	return (np.exp(2*z) - 1)/(np.exp(2*z) + 1)
+
+	if z>=0:
+		return -(np.exp(-2*z) - 1)/(np.exp(-2*z) + 1)
+	else:
+		return (np.exp(2*z) - 1)/(np.exp(2*z) + 1)
+
 
 def tanhDerivative(z):
 	a = tanh(z)
@@ -115,35 +123,25 @@ def trueClassVector(y,n):
 	vector = np.zeros((n,1))
 	vector[y] = 1
 
-
 	return vector
 
 def forwardPropogation(W,B,H,A,dataPointIndex):
 
-	for k in range(0,num_hidden-1):
+	for k in range(0,num_hidden):
 		if(k!=0):
 			A[k] = np.add(B[k],np.matmul(W[k],H[k]))
 		else:
 			m = H[k][dataPointIndex].reshape((len(H[k][dataPointIndex]),1))
 			A[k] = np.add(B[k],np.matmul(W[k],m))
 
-			# print W[k]
-
 		if(activation=="sigmoid"):
-			minValueOfA = np.amin(A[k])
-			tempA = np.add(A[k],minValueOfA)
-			H[k+1] = sigmoidFunctionToVector(tempA)
+			H[k+1] = sigmoidFunctionToVector(A[k])
 
 		else:
-			maxValueOfA = np.amax(A[k])
-			tempA = np.subtract(A[k],maxValueOfA)
-			H[k+1] = tanhFunctionToVector(tempA)
+			H[k+1] = tanhFunctionToVector(A[k])
 
-		# print "A[",k,"] = ",A[k]
-
-	A[-1] = np.add(B[-1],np.matmul(W[-1],H[num_hidden-1]))
+	A[-1] = np.add(B[-1],np.matmul(W[-1],H[-1]))
 	
-	# print A
 	y_hat = softmax(A[-1])
 	return A,H,y_hat
 
@@ -155,28 +153,23 @@ def backPropogation(W,B,H,A,y_hat,dataPointIndex):
 	grad_B_Loss = []
 
 	for k in range(num_hidden,-1,-1):
+		
 		if k == 0:
 			m = H[k][dataPointIndex].reshape((len(H[k][dataPointIndex]),1))
 			tempGrad_W_Loss = np.matmul(grad_aL_Loss,np.transpose(m))
 		else:
 			tempGrad_W_Loss = np.matmul(grad_aL_Loss,np.transpose(H[k]))
-		tempGrad_B_Loss = grad_aL_Loss
+		
+		tempGrad_B_Loss = np.copy(grad_aL_Loss)
 
 		grad_W_Loss.insert(0,tempGrad_W_Loss)
 		grad_B_Loss.insert(0,tempGrad_B_Loss)
 
 		if(k>0):
 			if(activation=="sigmoid"):
-				minValueOfA = np.amin(A[k-1])
-				tempA = np.add(A[k-1],minValueOfA)
-				grad_aL_Loss = (np.matmul(np.transpose(W[k]),grad_aL_Loss))*sigmoidDerivativeFunctionToVector(tempA)
+				grad_aL_Loss = (np.matmul(np.transpose(W[k]),grad_aL_Loss))*sigmoidDerivativeFunctionToVector(A[k-1])
 			else:
-				maxValueOfA = np.amax(A[k-1])
-				tempA = np.subtract(A[k-1],maxValueOfA)
-				grad_aL_Loss = (np.matmul(np.transpose(W[k]),grad_aL_Loss))*tanhDerivativeFunctionToVector(tempA)
-
-		# print k
-		# print A[k-1]
+				grad_aL_Loss = (np.matmul(np.transpose(W[k]),grad_aL_Loss))*tanhDerivativeFunctionToVector(A[k-1])
 
 	return grad_W_Loss,grad_B_Loss
 
@@ -193,36 +186,50 @@ Y = []
 with open(train,"rb") as file_obj:
 	reader = csv.reader(file_obj)
 	for row in reader:
-		if(row[0]!="id"):
+		if(row[0]!="id" ):
 			X.append(map(float,row[1:-1]))
 			Y.append(int(row[-1]))
+
+X_val = []
+Y_val = []
+Yhat_val = []
+
+with open(val,"rb") as file_obj:
+	reader = csv.reader(file_obj)
+	for row in reader:
+		if(row[0]!="id"):
+			X_val.append(map(float,row[1:-1]))
+			Y_val.append(int(row[-1]))
 
 numFeatures = len(X[0])
 
 X = np.array(X)
-# X = prep.normalize(X,norm='l1',axis=0)
+X = prep.normalize(X,axis=0, norm='l2')
+X_val = np.array(X_val)
+
+initVar =  math.sqrt(2.0/(numFeatures+numClasses))
 
 H.append(X) 
-W.append(np.random.uniform(low=0,high=1,size=(sizes[0],numFeatures)))
+W.append(initVar*np.random.randn(sizes[0],numFeatures))
 
 if(num_hidden!=len(sizes)):
 	raise "Inconsistent Input: sizes of hidden layer do not match the no of layers"
 
 for i in range(num_hidden):
-	tempA = np.random.uniform(low=0,high=1,size=(sizes[i],1))
-	tempB = np.random.uniform(low=0,high=1,size=(sizes[i],1))
-	tempH = np.random.uniform(low=0,high=1,size=(sizes[i],1))
+	tempA = initVar*np.random.randn(sizes[i],1)
+	tempB = initVar*np.random.randn(sizes[i],1)
+	tempH = initVar*np.random.randn(sizes[i],1)
 	if(i!=num_hidden-1):
-		tempW = np.random.uniform(low=0,high=1,size=(sizes[i+1],sizes[i]))
+		tempW = initVar*np.random.randn(sizes[i+1],sizes[i])
 		W.append(tempW)
 
 	A.append(tempA)
 	B.append(tempB)
 	H.append(tempH)
 
-W.append(np.random.uniform(low=0,high=1,size=(numClasses,sizes[-1])))
-B.append(np.random.uniform(low=0,high=1,size=(numClasses,1)))
-A.append(np.random.uniform(low=0,high=1,size=(numClasses,1)))
+W.append(initVar*np.random.randn(numClasses,sizes[-1]))
+B.append(initVar*np.random.randn(numClasses,1))
+A.append(initVar*np.random.randn(numClasses,1))
 
 
 prev_v_w = []
@@ -236,6 +243,9 @@ for k in range(len(W)):
 for t in range(maxIterations):
 
 	print t
+	# print B
+
+	numOfSteps = 0
 
 	tempV_w = W
 	tempV_b = B
@@ -282,7 +292,7 @@ for t in range(maxIterations):
 
 			A,H,y_hat = forwardPropogation(W,B,H,A,j*batch_size)
 			gradWLoss,gradBLoss = backPropogation(W,B,H,A,y_hat,j*batch_size)
-			
+	
 			for i in range(1,batch_size):
 
 				index = j*batch_size + i
@@ -355,24 +365,44 @@ for t in range(maxIterations):
 					W[k] = W[k] - lr*gradWLoss[k]
 					B[k] = B[k] - lr*gradBLoss[k]
 
+					# print W[k]
+					# print B[k]
+
 
 			else:
 				# Execution should never come here
 				raise "Erratic input of the optimization algorithm"
 
-X_val = []
-Y_val = []
-Yhat_val = []
+		numOfSteps = numOfSteps + 1
 
-with open(val,"rb") as file_obj:
-	reader = csv.reader(file_obj)
-	for row in reader:
-		if(row[0]!="id"):
-			X_val.append(map(float,row[1:-1]))
-			Y_val.append(int(row[-1]))
+		if(numOfSteps%100==0):
+
+			tempH = []
+			tempA = []
+			for p in range(len(H)):
+				tempH.append(np.zeros(H[p].shape))
+
+			for p in range(len(A)):
+				tempA.append(np.zeros(A[p].shape))
+
+			tempH[0] = X_val
+
+			correct = 0
+			loss = 0.0
+			for p in range(len(X_val)):
+				tempA,tempH,tempYhat = forwardPropogation(W,B,tempH,tempA,p)
+				# print p, tempYhat, Y_val[p]
+
+				if(np.argmax(tempYhat)==Y_val[p]):
+					correct+=1
+
+				loss += - np.log2(tempYhat[Y_val[p]])[0]
+
+			error = ((len(tempH[0])-correct)*100.0)/(len(tempH[0])*1.0)
+
+			print "After Epoch ",t+1,", Step ",numOfSteps,", Loss: ",loss,", Error: ",round(error,2),", lr: ",lr
 
 
-H[0] = np.array(X_val)
 
 for i in range(len(X_val)):
 	A,H,y_hat = forwardPropogation(W,B,H,A,i)
