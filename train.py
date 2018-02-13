@@ -417,7 +417,7 @@ for currEpoch in range(maxEpochs):
 		if(numOfSteps%100==0):
 
 			correct = 0
-			loss = 0.0
+			computedLoss = 0.0
 			for p in range(len(X_val)):
 				inputVector = np.array(X_val[p]).reshape(numFeatures,1)
 				tempA,tempH,tempYhat = forwardPropogation(W,B,inputVector)
@@ -427,16 +427,16 @@ for currEpoch in range(maxEpochs):
 					correct+=1
 
 				if(loss=="ce"):
-					loss += - np.log2(tempYhat[Y[p]])[0]
+					computedLoss += - np.log2(tempYhat[Y[p]])[0]
 				else:
-					loss += (1-tempYhat[Y[p]])*(1-tempYhat[Y[p]])
+					computedLoss += (1-tempYhat[Y[p]])*(1-tempYhat[Y[p]])
 
 			error = ((len(X_val)-correct)*100.0)/(len(X_val)*1.0)
-			loss = loss/float(len(X_val))
+			computedLoss = computedLoss/float(len(X_val))
 
 			currEpochError = error
 
-			print "After Epoch ",currEpoch+1,", Step ",numOfSteps,", Loss: ",loss,", Error: ",round(error,2),", lr: ",lr, ", correct: ", correct
+			print "Epoch ",currEpoch+1,", Step ",numOfSteps,", Loss: ",computedLoss,", Error: ",round(error,2),", lr: ",lr, ", correct: ", correct
 
 	if(currEpochError>prevEpochError):
 		if(anneal):
