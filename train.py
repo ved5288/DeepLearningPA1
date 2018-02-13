@@ -147,7 +147,13 @@ def forwardPropogation(W,B,inputDataVector):
 
 def backPropogation(W,H,A,y_hat,inputDataVector,trueOutput):
 	
-	grad_aL_Loss = -(trueClassVector(trueOutput,numClasses)-y_hat)
+	grad_aL_Loss = np.zeros((numClasses,1)) 
+	
+	if(loss=="ce"):
+		grad_aL_Loss = -(trueClassVector(trueOutput,numClasses)-y_hat)
+	else:
+		#TODO squared error loss
+		pass
 
 	grad_W_Loss = []
 	grad_B_Loss = []
@@ -253,6 +259,10 @@ for k in range(len(W)):
 
 ###########################################################################
 # Code Execution
+
+
+prevEpochError = 100.0
+currEpochError = 0.0 
 
 for currEpoch in range(maxEpochs):
 
@@ -412,15 +422,27 @@ for currEpoch in range(maxEpochs):
 				inputVector = np.array(X_val[p]).reshape(numFeatures,1)
 				tempA,tempH,tempYhat = forwardPropogation(W,B,inputVector)
 
-				if(np.argmax(tempYhat)==Y_val[p]):
+				predictedY = np.argmax(tempYhat) 
+				if(predictedY==Y_val[p]):
 					correct+=1
 
-				loss += - np.log2(tempYhat[Y[p]])[0]
+				if(loss=="ce"):
+					loss += - np.log2(tempYhat[Y[p]])[0]
+				else:
+					loss += (1-tempYhat[Y[p]])*(1-tempYhat[Y[p]])
 
 			error = ((len(X_val)-correct)*100.0)/(len(X_val)*1.0)
 			loss = loss/float(len(X_val))
 
+			currEpochError = error
+
 			print "After Epoch ",currEpoch+1,", Step ",numOfSteps,", Loss: ",loss,", Error: ",round(error,2),", lr: ",lr, ", correct: ", correct
+
+	if(currEpochError>prevEpochError):
+		if(anneal):
+			lr = 0.5*lr
+
+	prevEpochError = currEpochError 
 
 ###########################################################################
 # Compute F1 score for validation data
