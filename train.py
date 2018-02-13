@@ -54,7 +54,7 @@ expt_dir = args.expt_dir
 train = args.train
 test = args.test
 val = args.val
-maxIterations = 2
+maxIterations = 20
 
 ###########################################################################################
 
@@ -95,24 +95,17 @@ sqrtAndInvFunction = lambda z: 1.0/np.sqrt(z)
 sqrtAndInvFunctionToVector = np.vectorize(sqrtAndInvFunction)
 
 def softmax(v):
-	# TESTED
 	convertToExponent = lambda z: np.exp(z)
 	convertToExponenToVector = np.vectorize(convertToExponent)
-
 	maxValue = np.amax(v)
-
 	subtractByMax = lambda z: z-maxValue
 	subtractByMaxToVector = np.vectorize(subtractByMax)
-
 	new_v = subtractByMaxToVector(v)
-
-	new_v = convertToExponenToVector(new_v)
-	sum_new_v = np.sum(new_v)
-
-	linearNormalize = lambda z: z/sum_new_v
+	newprime_v = convertToExponenToVector(new_v)
+	sum_new_v = np.sum(newprime_v)
+	linearNormalize = lambda z: (z*1.0)/sum_new_v
 	linearNormalizeToVector = np.vectorize(linearNormalize)
-
-	softmax_v = linearNormalizeToVector(new_v)
+	softmax_v = linearNormalizeToVector(newprime_v)
 	return softmax_v
 
 def trueClassVector(y,n):
@@ -143,6 +136,12 @@ def forwardPropogation(W,B,H,A,dataPointIndex):
 	A[-1] = np.add(B[-1],np.matmul(W[-1],H[-1]))
 	
 	y_hat = softmax(A[-1])
+
+	# print dataPointIndex
+	# print "A = ", A
+	# print "H = ", H
+	# print "y_hat = ", y_hat
+
 	return A,H,y_hat
 
 def backPropogation(W,B,H,A,y_hat,dataPointIndex):
@@ -160,16 +159,20 @@ def backPropogation(W,B,H,A,y_hat,dataPointIndex):
 		else:
 			tempGrad_W_Loss = np.matmul(grad_aL_Loss,np.transpose(H[k]))
 		
-		tempGrad_B_Loss = np.copy(grad_aL_Loss)
+		tempVar = np.copy(grad_aL_Loss)
 
-		grad_W_Loss.insert(0,tempGrad_W_Loss)
-		grad_B_Loss.insert(0,tempGrad_B_Loss)
+		grad_W_Loss.insert(0,np.copy(tempGrad_W_Loss))
+		grad_B_Loss.insert(0,np.copy(tempVar))
 
 		if(k>0):
 			if(activation=="sigmoid"):
 				grad_aL_Loss = (np.matmul(np.transpose(W[k]),grad_aL_Loss))*sigmoidDerivativeFunctionToVector(A[k-1])
 			else:
 				grad_aL_Loss = (np.matmul(np.transpose(W[k]),grad_aL_Loss))*tanhDerivativeFunctionToVector(A[k-1])
+
+
+	# print grad_W_Loss
+	# print grad_B_Loss
 
 	return grad_W_Loss,grad_B_Loss
 
@@ -201,16 +204,40 @@ with open(val,"rb") as file_obj:
 			X_val.append(map(float,row[1:-1]))
 			Y_val.append(int(row[-1]))
 
+X_test = []
+Yhat_test = []
+X_testID = []
+with open(test,"rb") as file_obj:
+	reader = csv.reader(file_obj)
+	for row in reader:
+		if(row[0]!="id"):
+			X_test.append(map(float,row[1:]))
+			X_testID.append(int(row[0]))
+
+
 numFeatures = len(X[0])
 
 X = np.array(X)
-X = prep.normalize(X,axis=0, norm='l2')
+# X = prep.normalize(X,axis=0, norm='l2')
+scaler = prep.StandardScaler()
+scaler.fit(X)
+X = scaler.transform(X)
+
 X_val = np.array(X_val)
+slt = prep.StandardScaler()
+slt.fit(X_val)
+X_val = slt.transform(X_val)
+
+X_test = np.array(X_test)
+slt_test = prep.StandardScaler()
+slt_test.fit(X_test)
+X_test = slt_test.transform(X_test)
 
 initVar =  math.sqrt(2.0/(numFeatures+numClasses))
 
 H.append(X) 
 W.append(initVar*np.random.randn(sizes[0],numFeatures))
+# W.append(np.zeros((sizes[0],numFeatures)))
 
 if(num_hidden!=len(sizes)):
 	raise "Inconsistent Input: sizes of hidden layer do not match the no of layers"
@@ -218,19 +245,25 @@ if(num_hidden!=len(sizes)):
 for i in range(num_hidden):
 	tempA = initVar*np.random.randn(sizes[i],1)
 	tempB = initVar*np.random.randn(sizes[i],1)
+	# tempB = np.zeros((sizes[i],1))
 	tempH = initVar*np.random.randn(sizes[i],1)
 	if(i!=num_hidden-1):
+		# tempW = np.zeros((sizes[i+1],sizes[i]))
 		tempW = initVar*np.random.randn(sizes[i+1],sizes[i])
-		W.append(tempW)
+		W.append(np.copy(tempW))
 
-	A.append(tempA)
-	B.append(tempB)
-	H.append(tempH)
+	A.append(np.copy(tempA))
+	B.append(np.copy(tempB))
+	H.append(np.copy(tempH))
 
+# W.append(np.zeros((numClasses,sizes[-1])))
+# B.append(np.zeros((numClasses,1)))
 W.append(initVar*np.random.randn(numClasses,sizes[-1]))
 B.append(initVar*np.random.randn(numClasses,1))
 A.append(initVar*np.random.randn(numClasses,1))
 
+# print "W = ", W
+# print "B = ", B
 
 prev_v_w = []
 prev_v_b = []
@@ -252,6 +285,33 @@ for t in range(maxIterations):
 
 	Wprime = W
 	Bprime = B
+
+	# if t == 0:
+	# 	tempH = []
+	# 	tempA = []
+	# 	for p in range(len(H)):
+	# 		tempH.append(np.zeros(H[p].shape))
+
+	# 	for p in range(len(A)):
+	# 		tempA.append(np.zeros(A[p].shape))
+
+	# 	tempH[0] = np.copy(X)
+
+	# 	correct = 0
+	# 	loss = 0.0
+	# 	for p in range(len(X)):
+	# 		tempA,tempH,tempYhat = forwardPropogation(W,B,tempH,tempA,p)
+	# 		# print p, np.argmax(tempYhat), Y[p]
+
+	# 		if(np.argmax(tempYhat)==Y[p]):
+	# 			correct+=1
+
+	# 		loss += - np.log2(tempYhat[Y[p]])[0]
+
+	# 	error = ((len(tempH[0])-correct)*100.0)/(len(tempH[0])*1.0)
+	# 	loss = loss/float(len(X))
+
+	# 	print "Before Epoch ",t+1,", Step ",numOfSteps,", Loss: ",loss,", Error: ",round(error,2),", lr: ",lr, ", correct: ", correct
 
 	for j in range(len(X)/batch_size):
 
@@ -291,8 +351,11 @@ for t in range(maxIterations):
 		else:
 
 			A,H,y_hat = forwardPropogation(W,B,H,A,j*batch_size)
+
 			gradWLoss,gradBLoss = backPropogation(W,B,H,A,y_hat,j*batch_size)
-	
+
+			# print gradWLoss,gradBLoss
+
 			for i in range(1,batch_size):
 
 				index = j*batch_size + i
@@ -355,8 +418,8 @@ for t in range(maxIterations):
 					W[k] = np.subtract(W[k],v_w)
 					B[k] = np.subtract(B[k],v_b)
 
-					prev_v_w[k] = v_w
-					prev_v_b[k] = v_b
+					prev_v_w[k] = np.copy(v_w)
+					prev_v_b[k] = np.copy(v_b)
 
 
 			elif(opt=="gd"):
@@ -385,22 +448,23 @@ for t in range(maxIterations):
 			for p in range(len(A)):
 				tempA.append(np.zeros(A[p].shape))
 
-			tempH[0] = X_val
+			tempH[0] = X
 
 			correct = 0
 			loss = 0.0
-			for p in range(len(X_val)):
+			for p in range(len(X)):
 				tempA,tempH,tempYhat = forwardPropogation(W,B,tempH,tempA,p)
-				# print p, tempYhat, Y_val[p]
+				# print p, np.argmax(tempYhat), Y[p]
 
-				if(np.argmax(tempYhat)==Y_val[p]):
+				if(np.argmax(tempYhat)==Y[p]):
 					correct+=1
 
-				loss += - np.log2(tempYhat[Y_val[p]])[0]
+				loss += - np.log2(tempYhat[Y[p]])[0]
 
 			error = ((len(tempH[0])-correct)*100.0)/(len(tempH[0])*1.0)
+			loss = loss/float(len(X))
 
-			print "After Epoch ",t+1,", Step ",numOfSteps,", Loss: ",loss,", Error: ",round(error,2),", lr: ",lr
+			print "After Epoch ",t+1,", Step ",numOfSteps,", Loss: ",loss,", Error: ",round(error,2),", lr: ",lr, ", correct: ", correct
 
 
 
@@ -419,3 +483,25 @@ print "Number of correct : ",correct
 print "Number incorrect: ", len(Y_val) - correct
 
 print f1Score
+
+for i in range(len(X_test)):
+	A,H,y_hat = forwardPropogation(W,B,H,A,i)
+	Yhat_test.append(np.argmax(y_hat))
+
+if expt_dir[-1] != '/':
+	expt_dir += '/'
+
+outputFilePath = expt_dir + "test_submission.csv"
+
+output = [["id","label"]]
+
+for x in xrange(0,len(Yhat_test)):
+	temp = []
+	temp.append(X_testID[x])
+	temp.append(Yhat_test[x])
+	output.append(temp)
+
+with open(outputFilePath, "wb") as csv_file:
+        writer = csv.writer(csv_file, delimiter=',')
+        for line in output:
+            writer.writerow(line)
