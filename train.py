@@ -38,6 +38,7 @@ parser.add_argument('--expt_dir',type=str)
 parser.add_argument('--train',type=str) 							
 parser.add_argument('--test',type=str) 
 parser.add_argument('--val',type=str)								
+parser.add_argument('--pretrain',type=str2bool, default=False)
 
 args = parser.parse_args()
 
@@ -55,7 +56,8 @@ expt_dir = args.expt_dir
 train = args.train
 test = args.test
 val = args.val
-maxEpochs = 15
+pretrain = args.pretrain
+maxEpochs = 10
 
 ###########################################################################################
 
@@ -153,7 +155,11 @@ def backPropogation(W,H,A,y_hat,inputDataVector,trueOutput):
 		grad_aL_Loss = -(trueClassVector(trueOutput,numClasses)-y_hat)
 	else:
 		#TODO squared error loss
-		pass
+		Identity = np.identity(numClasses)
+		repeatMatrix = np.repeat(y_hat,numClasses,axis=1)
+		changeI = Identity - repeatMatrix
+		sumMatrix = np.multiply((y_hat - trueClassVector(trueOutput,numClasses)), y_hat)
+		grad_aL_Loss = np.matmul(changeI,sumMatrix)
 
 	grad_W_Loss = []
 	grad_B_Loss = []
@@ -237,255 +243,281 @@ X_test = slt_test.transform(X_test)
 
 initVar =  np.sqrt(2.0/(numFeatures+numClasses))
 
-W.append(initVar*np.random.randn(sizes[0],numFeatures))
 
 if(num_hidden!=len(sizes)):
 	raise "Inconsistent Input: sizes of hidden layer do not match the no of layers"
 
-for i in range(num_hidden):
-
-	if(i!=num_hidden-1):
-		W.append(initVar*np.random.randn(sizes[i+1],sizes[i]))
-
-	B.append(initVar*np.random.randn(sizes[i],1))
+if not pretrain:
 	
-W.append(initVar*np.random.randn(numClasses,sizes[-1]))
-B.append(initVar*np.random.randn(numClasses,1))
 
-prev_v_w = []
-prev_v_b = []
+	W.append(initVar*np.random.randn(sizes[0],numFeatures))
 
-for k in range(len(W)):
-	prev_v_w.append(np.zeros(W[k].shape))
-	prev_v_b.append(np.zeros(B[k].shape))
+	l2Reg = 0.000001
 
-m_w = []
-m_b = []
-v_w = []
-v_b = []
 
-for k in range(len(W)):
-	m_w.append(np.zeros(W[k].shape))
-	m_b.append(np.zeros(B[k].shape))
-	v_w.append(np.zeros(W[k].shape))
-	v_b.append(np.zeros(B[k].shape))
+	for i in range(num_hidden):
+
+		if(i!=num_hidden-1):
+			W.append(initVar*np.random.randn(sizes[i+1],sizes[i]))
+
+		B.append(initVar*np.random.randn(sizes[i],1))
+		
+	W.append(initVar*np.random.randn(numClasses,sizes[-1]))
+	B.append(initVar*np.random.randn(numClasses,1))
+
+	prev_v_w = []
+	prev_v_b = []
+
+	for k in range(len(W)):
+		prev_v_w.append(np.zeros(W[k].shape))
+		prev_v_b.append(np.zeros(B[k].shape))
+
+	m_w = []
+	m_b = []
+	v_w = []
+	v_b = []
+
+	for k in range(len(W)):
+		m_w.append(np.zeros(W[k].shape))
+		m_b.append(np.zeros(B[k].shape))
+		v_w.append(np.zeros(W[k].shape))
+		v_b.append(np.zeros(B[k].shape))
 ###########################################################################
 # Code Execution
 
-logFileTrain = open(expt_dir+"log_train.txt","w")
-logFileVal = open(expt_dir+"log_val.txt","w")
+if expt_dir[-1] != '/':
+	expt_dir += '/'
 
-prevEpochError = 100.0
-currEpochError = 0.0 
-
-beta1 = 0.9
-beta2 = 0.999
-
-poweredBeta1 = 1.0
-poweredBeta2 = 1.0
-
-for currEpoch in range(maxEpochs):
-
-	c = zip(X,Y)
-	random.shuffle(c)
-	X,Y = zip(*c)
-	X = np.array(X)
-	Y = list(Y)
-
-	poweredBeta1 *= beta1
-	poweredBeta2 *= beta2 
-
-	numOfSteps = 0
-
-	tempV_w = []
-	tempV_b = []
-
-	Wprime = []
-	Bprime = []
-
-	for k in range(len(W)):
-		Wprime.append(np.zeros(W[k].shape))
-		tempV_w.append(np.zeros(W[k].shape))
-
-
-	for k in range(len(B)):
-		Bprime.append(np.zeros(B[k].shape))
-		tempV_b.append(np.zeros(B[k].shape))
+if not pretrain:
 	
 
-	for j in range(len(X)/batch_size):
+	logFileTrain = open(expt_dir+"log_train.txt","w",1)
+	logFileVal = open(expt_dir+"log_val.txt","w",1)
 
-		if(opt=="nag"):
+	prevEpochError = 100.0
+	currEpochError = 0.0 
 
-			for k in range(len(Wprime)):
-				tempV_w[k] = np.copy(prev_v_w[k]*momentum)
-				tempV_b[k] = np.copy(prev_v_b[k]*momentum)
+	beta1 = 0.9
+	beta2 = 0.999
 
-				Wprime[k] = np.subtract(W[k],tempV_w[k])
-				Bprime[k] = np.subtract(B[k],tempV_b[k])
+	poweredBeta1 = 1.0
+	poweredBeta2 = 1.0
 
-			inputVector = np.array(X[j*batch_size]).reshape(numFeatures,1)
-			A,H,y_hat = forwardPropogation(Wprime,Bprime,inputVector)
 
-			gradWLoss,gradBLoss = backPropogation(Wprime,H,A,y_hat,inputVector,Y[j*batch_size])
+	for currEpoch in range(maxEpochs):
 
-			for i in range(1,batch_size):
+		print "Entered Epoch ",currEpoch+1
 
-				index = j*batch_size + i
-				inputVector = np.array(X[index]).reshape(numFeatures,1)
+		c = zip(X,Y)
+		random.shuffle(c)
+		X,Y = zip(*c)
+		X = np.array(X)
+		Y = list(Y)
 
+		
+
+		numOfSteps = 0
+
+		tempV_w = []
+		tempV_b = []
+
+		Wprime = []
+		Bprime = []
+
+		for k in range(len(W)):
+			Wprime.append(np.zeros(W[k].shape))
+			tempV_w.append(np.zeros(W[k].shape))
+
+
+		for k in range(len(B)):
+			Bprime.append(np.zeros(B[k].shape))
+			tempV_b.append(np.zeros(B[k].shape))
+		
+
+		for j in range(len(X)/batch_size):
+
+			if(opt=="nag"):
+
+				for k in range(len(Wprime)):
+					tempV_w[k] = np.copy(prev_v_w[k]*momentum)
+					tempV_b[k] = np.copy(prev_v_b[k]*momentum)
+
+					Wprime[k] = np.subtract(W[k],tempV_w[k])
+					Bprime[k] = np.subtract(B[k],tempV_b[k])
+
+				inputVector = np.array(X[j*batch_size]).reshape(numFeatures,1)
 				A,H,y_hat = forwardPropogation(Wprime,Bprime,inputVector)
-				tempGradWLoss,tempGradBLoss = backPropogation(Wprime,H,A,y_hat,inputVector,Y[index])
-			
-				for k in range(len(gradWLoss)):
-					gradWLoss[k] = np.add(gradWLoss[k],tempGradWLoss[k])
-					gradBLoss[k] = np.add(gradBLoss[k],tempGradBLoss[k])
 
-			for k in range(len(gradWLoss)):
-				tempV_w[k] = np.add(prev_v_w[k]*momentum,gradWLoss[k]*lr)
-				tempV_b[k] = np.add(prev_v_b[k]*momentum,gradBLoss[k]*lr)
+				gradWLoss,gradBLoss = backPropogation(Wprime,H,A,y_hat,inputVector,Y[j*batch_size])
 
-				W[k] = np.subtract(W[k],tempV_w[k])
-				B[k] = np.subtract(B[k],tempV_b[k])
+				for i in range(1,batch_size):
 
-				prev_v_w[k] = np.copy(tempV_w[k])
-				prev_v_b[k] = np.copy(tempV_b[k])
+					index = j*batch_size + i
+					inputVector = np.array(X[index]).reshape(numFeatures,1)
 
-		else:
-
-			inputVector = np.array(X[j*batch_size]).reshape(numFeatures,1)
-			A,H,y_hat = forwardPropogation(W,B,inputVector)
-
-			gradWLoss,gradBLoss = backPropogation(W,H,A,y_hat,inputVector,Y[j*batch_size])
-
-			for i in range(1,batch_size):
-
-				index = j*batch_size + i
-				inputVector = np.array(X[index]).reshape(numFeatures,1)
-				A,H,y_hat = forwardPropogation(W,B,inputVector)
-
-				tempGradWLoss,tempGradBLoss = backPropogation(W,H,A,y_hat,inputVector,Y[index])
-			
-				for k in range(len(gradWLoss)):
-					gradWLoss[k] = np.add(gradWLoss[k],tempGradWLoss[k])
-					gradBLoss[k] = np.add(gradBLoss[k],tempGradBLoss[k])
-
-			for k in range(len(gradWLoss)):
-				gradWLoss[k] = gradWLoss[k]/(1.0*batch_size)
-				gradBLoss[k] = gradBLoss[k]/(1.0*batch_size)
-
-			# till here we compute the gradient for the batch, that is dw and db
-
-			if(opt=="adam"):
+					A,H,y_hat = forwardPropogation(Wprime,Bprime,inputVector)
+					tempGradWLoss,tempGradBLoss = backPropogation(Wprime,H,A,y_hat,inputVector,Y[index])
 				
-				eps = 1e-8
+					for k in range(len(gradWLoss)):
+						gradWLoss[k] = np.add(gradWLoss[k],tempGradWLoss[k])
+						gradBLoss[k] = np.add(gradBLoss[k],tempGradBLoss[k])
 
 				for k in range(len(gradWLoss)):
-					m_w[k] = np.add(m_w[k]*beta1,gradWLoss[k]*(1-beta1))
-					m_b[k] = np.add(m_b[k]*beta1,gradBLoss[k]*(1-beta1))
+					tempV_w[k] = np.add(prev_v_w[k]*momentum,gradWLoss[k]*lr)
+					tempV_b[k] = np.add(prev_v_b[k]*momentum,gradBLoss[k]*lr)
 
-					v_w[k] = np.add(v_w[k]*beta2,(gradWLoss[k]*gradWLoss[k])*(1-beta2))
-					v_b[k] = np.add(v_b[k]*beta2,(gradBLoss[k]*gradBLoss[k])*(1-beta2))
+					W[k] = np.subtract(W[k],tempV_w[k])
+					B[k] = np.subtract(B[k],tempV_b[k])
 
-					m_w[k] = (1.0*m_w[k])/(1-poweredBeta1)
-					m_b[k] = (1.0*m_b[k])/(1-poweredBeta2)
-
-					v_w[k] = (1.0*v_w[k])/(1-poweredBeta1)
-					v_b[k] = (1.0*v_b[k])/(1-poweredBeta2)
-
-					v_wktemp = (sqrtAndInvFunctionToVector(v_w[k]+eps)*m_w[k])*lr 
-					W[k] = np.subtract(W[k],v_wktemp) 
-
-					v_bktemp = (sqrtAndInvFunctionToVector(v_b[k]+eps)*m_b[k])*lr 
-					B[k] = np.subtract(B[k],v_bktemp) 
-
-			elif(opt=="momentum"):
-				for k in range(len(gradWLoss)):
-
-					v_w = np.add(prev_v_w[k]*momentum,gradWLoss[k]*lr)
-					v_b = np.add(prev_v_b[k]*momentum,gradBLoss[k]*lr)
-
-					W[k] = np.subtract(W[k],v_w)
-					B[k] = np.subtract(B[k],v_b)
-
-					prev_v_w[k] = np.copy(v_w)
-					prev_v_b[k] = np.copy(v_b)
-
-
-			elif(opt=="gd"):
-
-				for k in range(len(W)):
-					W[k] = W[k] - lr*gradWLoss[k]
-					B[k] = B[k] - lr*gradBLoss[k]
+					prev_v_w[k] = np.copy(tempV_w[k])
+					prev_v_b[k] = np.copy(tempV_b[k])
 
 			else:
-				# Execution should never come here
-				raise "Erratic input of the optimization algorithm"
 
-		numOfSteps = numOfSteps + 1
+				inputVector = np.array(X[j*batch_size]).reshape(numFeatures,1)
+				A,H,y_hat = forwardPropogation(W,B,inputVector)
 
-		if(numOfSteps%100==0):
+				gradWLoss,gradBLoss = backPropogation(W,H,A,y_hat,inputVector,Y[j*batch_size])
 
-			correct = 0
-			computedLoss = 0.0
-			for p in range(len(X_val)):
-				inputVector = np.array(X_val[p]).reshape(numFeatures,1)
-				tempA,tempH,tempYhat = forwardPropogation(W,B,inputVector)
+				for i in range(1,batch_size):
 
-				predictedY = np.argmax(tempYhat) 
-				if(predictedY==Y_val[p]):
-					correct+=1
+					index = j*batch_size + i
+					inputVector = np.array(X[index]).reshape(numFeatures,1)
+					A,H,y_hat = forwardPropogation(W,B,inputVector)
 
-				if(loss=="ce"):
-					computedLoss += - np.log2(tempYhat[Y_val[p]])[0]
+					tempGradWLoss,tempGradBLoss = backPropogation(W,H,A,y_hat,inputVector,Y[index])
+				
+					for k in range(len(gradWLoss)):
+						gradWLoss[k] = np.add(gradWLoss[k],tempGradWLoss[k])
+						gradBLoss[k] = np.add(gradBLoss[k],tempGradBLoss[k])
+
+				for k in range(len(gradWLoss)):
+					gradWLoss[k] = gradWLoss[k]/(1.0*batch_size)
+					gradBLoss[k] = gradBLoss[k]/(1.0*batch_size)
+
+				# till here we compute the gradient for the batch, that is dw and db
+
+				if(opt=="adam"):
+					
+					eps = 1e-8
+
+					poweredBeta1 *= beta1
+					poweredBeta2 *= beta2 
+
+					for k in range(len(gradWLoss)):
+						m_w[k] = np.add(m_w[k]*beta1,gradWLoss[k]*(1-beta1))
+						m_b[k] = np.add(m_b[k]*beta1,gradBLoss[k]*(1-beta1))
+
+						v_w[k] = np.add(v_w[k]*beta2,np.square(gradWLoss[k])*(1-beta2))
+						v_b[k] = np.add(v_b[k]*beta2,np.square(gradBLoss[k])*(1-beta2))
+
+						# print poweredBeta1, poweredBeta2
+
+						tempm_w = (1.0*m_w[k])/(1.0-poweredBeta1)
+						tempm_b = (1.0*m_b[k])/(1.0-poweredBeta1)
+
+						tempv_w = (1.0*v_w[k])/(1.0-poweredBeta2)
+						tempv_b = (1.0*v_b[k])/(1.0-poweredBeta2)
+
+						v_wktemp = np.divide(tempm_w,np.sqrt(tempv_w)+eps)*lr 
+						W[k] = np.subtract(W[k],v_wktemp)
+
+						v_bktemp = np.divide(tempm_b,np.sqrt(tempv_b)+eps)*lr 
+						B[k] = np.subtract(B[k],v_bktemp)
+
+				elif(opt=="momentum"):
+					for k in range(len(gradWLoss)):
+
+						v_w = np.add(prev_v_w[k]*momentum,gradWLoss[k]*lr)
+						v_b = np.add(prev_v_b[k]*momentum,gradBLoss[k]*lr)
+
+						W[k] = np.subtract(W[k],v_w)
+						B[k] = np.subtract(B[k],v_b)
+
+						prev_v_w[k] = np.copy(v_w)
+						prev_v_b[k] = np.copy(v_b)
+
+
+				elif(opt=="gd"):
+
+					for k in range(len(W)):
+						W[k] = W[k] - lr*gradWLoss[k]
+						B[k] = B[k] - lr*gradBLoss[k]
 				else:
-					computedLoss += (1-tempYhat[Y_val[p]])**2
+					# Execution should never come here
+					raise "Erratic input of the optimization algorithm"
 
-			error = ((len(X_val)-correct)*100.0)/(len(X_val)*1.0)
-			computedLoss = computedLoss/float(len(X_val))
+			numOfSteps = numOfSteps + 1
 
-			logEntry = "Epoch "+str(currEpoch)+", Step "+str(numOfSteps)+", Loss: "+str(computedLoss)+", Error: "+str(round(error,2))+", lr: "+str(lr)+"\n" 
-			logFileVal.write(logEntry)
+			if(numOfSteps%100==0):
 
-			correct = 0
-			computedLoss = 0.0
-			for p in range(len(X)):
-				inputVector = np.array(X[p]).reshape(numFeatures,1)
-				tempA,tempH,tempYhat = forwardPropogation(W,B,inputVector)
+				correct = 0
+				computedLoss = 0.0
+				for p in range(len(X_val)):
+					inputVector = np.array(X_val[p]).reshape(numFeatures,1)
+					tempA,tempH,tempYhat = forwardPropogation(W,B,inputVector)
 
-				predictedY = np.argmax(tempYhat) 
-				if(predictedY==Y[p]):
-					correct+=1
+					predictedY = np.argmax(tempYhat) 
+					if(predictedY==Y_val[p]):
+						correct+=1
 
-				if(loss=="ce"):
-					computedLoss += - np.log2(tempYhat[Y[p]])[0]
-				else:
-					computedLoss += (1-tempYhat[Y[p]])**2
+					if(loss=="ce"):
+						if(tempYhat[Y_val[p]]==0):
+							# print "A=",tempA[-1]
+							# print "B=",B[-1]
+							# print "W=",W[-1]
+							# print "H=",tempH[-1]
+							pass
+						computedLoss += - np.log2(tempYhat[Y_val[p]])[0]
+					else:
+						# computedLoss += (1-tempYhat[Y_val[p]])**2
+						computedLoss += 0.5*(np.sum(np.square(tempYhat - trueClassVector(Y_val[p],numClasses))))
 
-			error = ((len(X)-correct)*100.0)/(len(X)*1.0)
-			computedLoss = computedLoss/float(len(X))
+				error = ((len(X_val)-correct)*100.0)/(len(X_val)*1.0)
+				computedLoss = computedLoss/float(len(X_val))
 
-			logEntry = "Epoch "+str(currEpoch)+", Step "+str(numOfSteps)+", Loss: "+str(computedLoss)+", Error: "+str(round(error,2))+", lr: "+str(lr)+"\n"
-			logFileTrain.write(logEntry)
+				logEntry = "Epoch "+str(currEpoch)+", Step "+str(numOfSteps)+", Loss: "+str(computedLoss)+", Error: "+str(round(error,2))+", lr: "+str(lr)+"\n" 
+				logFileVal.write(logEntry)
 
-			currEpochError = error
+				correct = 0
+				computedLoss = 0.0
+				for p in range(len(X)):
+					inputVector = np.array(X[p]).reshape(numFeatures,1)
+					tempA,tempH,tempYhat = forwardPropogation(W,B,inputVector)
 
-	if(currEpochError>prevEpochError):
-		if(anneal):
-			lr = 0.5*lr
+					predictedY = np.argmax(tempYhat) 
+					if(predictedY==Y[p]):
+						correct+=1
 
-	prevEpochError = currEpochError 
+					if(loss=="ce"):
+						computedLoss += - np.log2(tempYhat[Y[p]])[0]
+					else:
+						computedLoss += 0.5*(np.sum(np.square(tempYhat - trueClassVector(Y[p],numClasses))))
+
+				error = ((len(X)-correct)*100.0)/(len(X)*1.0)
+				computedLoss = computedLoss/float(len(X))
+
+				logEntry = "Epoch "+str(currEpoch)+", Step "+str(numOfSteps)+", Loss: "+str(computedLoss)+", Error: "+str(round(error,2))+", lr: "+str(lr)+"\n"
+				logFileTrain.write(logEntry)
+
+				currEpochError = error
+
+		if(currEpochError>prevEpochError):
+			if(anneal):
+				lr = 0.5*lr
+
+		prevEpochError = currEpochError 
 
 ###########################################################################
 # Compute F1 score for validation data
+if not pretrain:
+	for i in range(len(X_val)):
+		inputVector = np.array(X_val[i]).reshape(numFeatures,1)
+		A,H,y_hat = forwardPropogation(W,B,inputVector)
+		Yhat_val.append(np.argmax(y_hat))
 
-for i in range(len(X_val)):
-	inputVector = np.array(X_val[i]).reshape(numFeatures,1)
-	A,H,y_hat = forwardPropogation(W,B,inputVector)
-	Yhat_val.append(np.argmax(y_hat))
-
-f1Score = mt.f1_score(Y_val,Yhat_val)
-print f1Score
+	f1Score = mt.f1_score(Y_val,Yhat_val)
+	print f1Score
 
 ##########################################################################
 # Predict output for Test Data
@@ -493,16 +525,17 @@ print f1Score
 if save_dir[-1] != '/':
 	save_dir += '/'
 
-with open(save_dir+"model.pickle", "rb") as file_obj:
-	cPickle.dump((W,B),file_obj)
+if pretrain:
+	with open(save_dir+"model.pickle", "rb") as file_obj:
+		W,B = cPickle.load(file_obj)	
 
+if not pretrain:
+	with open(save_dir+"model.pickle", "wb") as file_obj:
+		cPickle.dump((W,B),file_obj)
 for i in range(len(X_test)):
 	inputVector = np.array(X_test[i]).reshape(numFeatures,1)
 	A,H,y_hat = forwardPropogation(W,B,inputVector)
 	Yhat_test.append(np.argmax(y_hat))
-
-if expt_dir[-1] != '/':
-	expt_dir += '/'
 
 outputFilePath = expt_dir + "test_submission.csv"
 
